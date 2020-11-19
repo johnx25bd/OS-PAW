@@ -7,8 +7,9 @@ import os_paw.project_paths as paths
 from os_paw.api_utils import (convert_features_to_geojson,
                               get_feature_geometry_type, validate_api_key,
                               validate_bbox, validate_output_format,
+                              validate_geojson_polygon, geojson_polygon_to_string,
                               validate_request_params, validate_srs,
-                              validate_type_name)
+                              validate_type_name, create_polygon_filter)
 from os_paw.products import wfs_products
 
 
@@ -29,6 +30,7 @@ class WFS_API:
     _ALL_PRODUCTS = _PREMIUM_PRODUCTS | _OPEN_PRODUCTS
 
     def __init__(self, api_key):
+        print("DEV")
         self.__api_key = api_key
 
     @property
@@ -48,6 +50,7 @@ class WFS_API:
                                      max_feature_count=1000):
         request_params = self._create_request_params(type_name=type_name, 
                                                 bbox=bbox,
+                                                polygon_string=False,
                                                 allow_premium=allow_premium,
                                                 output_format=output_format,
                                                 srs=srs,
@@ -74,12 +77,51 @@ class WFS_API:
         return FeatureCollection(all_features, crs=srs)
 
 
+    def get_features_within_polygon(self,  type_name, polygon,
+                                     allow_premium=False,
+                                     srs='EPSG:4326', 
+                                     output_format='geojson',
+                                     max_feature_count=1000):
 
-    def _create_request_params(self, allow_premium, type_name, bbox, 
+        validate_geojson_polygon(polygon)
+        polygon_string = geojson_polygon_to_string(polygon)
+
+        
+        request_params = self._create_request_params(type_name=type_name, 
+                                                bbox=False,
+                                                polygon_string=polygon_string,
+                                                allow_premium=allow_premium,
+                                                output_format=output_format,
+                                                srs=srs,
+                                                start_index=0)
+        index_count = count(1, self._MAX_FEATURES_PER_REQUEST)
+
+        all_features = []
+        features = True
+        while features and request_params['startIndex'] <= max_feature_count:
+            response = requests.get(self._WFS_ENDPOINT, params=request_params)
+            payload = response.json()
+            print("RESPONSE received!")
+            features = payload['features']
+            all_features.extend(features)
+            request_params['startIndex'] = next(index_count)
+
+        if all_features:
+            # Assumes all features in collection will be of the same type
+            geometry_type = get_feature_geometry_type(all_features[0]).lower()
+            if geometry_type == 'linestring':
+                all_features = convert_features_to_geojson(all_features)
+            elif geometry_type not in {'point', 'polygon'}:
+                raise Exception(f'Currently unable to handle {geometry_type}s.')
+
+        return FeatureCollection(all_features, crs=srs)
+
+    def _create_request_params(self, allow_premium, type_name, bbox, polygon_string,
                                output_format, srs='EPSG:4326', start_index=0):
         validate_request_params(api_service=self._SERVICE,
                                 type_name=type_name,
                                 bbox=bbox,
+                                polygon_string=polygon_string,
                                 allow_premium=allow_premium,
                                 srs=srs,
                                 output_format=output_format)        
@@ -92,9 +134,15 @@ class WFS_API:
             'typeNames': type_name,
             'outputFormat': output_format,
             'srsName': srs,
-            'bbox': bbox,
             'count': self._MAX_FEATURES_PER_REQUEST
         }
+
+        
+        if bbox:
+            request_params['bbox'] = bbox 
+        if polygon_string:
+            request_params['filter'] = create_polygon_filter(polygon_string, srs)
+
         return request_params
 
 

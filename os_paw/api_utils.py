@@ -118,12 +118,84 @@ def validate_bbox(bbox_string, srs='EPSG:4326'):
         _validate_bbox(bbox_string, srs='EPSG:27700', min_x=0, max_x=700000, 
                                                       min_y=0, max_y=1250000)
 
+def validate_geojson_polygon(geojson): 
+    geom_type = get_feature_geometry_type(geojson).lower()
+    if geom_type != "polygon":
+        raise Exception("Geometry to fetch intersecting features is not a valid GeoJSON Polygon Feature")
 
-def validate_request_params(api_service, allow_premium, type_name, 
-                            bbox, srs, output_format):
+def geojson_polygon_to_string(geojson):
+
+    polygon_coord_strings = [','.join([str(yx) for yx in coord[::-1]]) for coord in geojson['geometry']['coordinates'][0]]
+    # Flip coords to [y, x] and convert to space-delimited string of comma-separated coords
+    polygon_string = ' '.join(polygon_coord_strings)
+
+    return polygon_string
+
+def _validate_polygon_string(polygon_string, srs, min_x, max_x, min_y, max_y):
+    
+    polygon_coords = [[float(coord) for coord in coords.split(',')] for coords in polygon_string.split(' ')]
+    polygon_coords_transposed = list(zip(*polygon_coords))
+
+    max_lat = max(polygon_coords_transposed[0])
+    min_lat = min(polygon_coords_transposed[0])
+    max_lon = max(polygon_coords_transposed[1])
+    min_lon = min(polygon_coords_transposed[1])
+    
+    if srs == 'EPSG:4326':
+        msg = ('Format polygon as a space-separated string of comma-separated coordinates the form '
+                '"lat1,lon1 lat2,lon2 lat3,lon3 ... latn,lonn".')
+    elif srs == 'EPSG:27700':
+        msg = ('Format polygon as a space-separated string of comma-separated coordinates the form '
+                '"lat1,lon1 lat2,lon2 lat3,lon3 ... latn,lonn".')
+    assert min_lat > min_y and max_lat < max_y, (''
+                                f'British Latitude values must be between '
+                                f'{min_y} and {max_y}. {msg}')
+    assert min_lon > min_x and max_lon < max_x, (''
+                                f'British Longitude values must be between '
+                                f'{min_x} and {max_x}. {msg}')
+
+
+
+def validate_polygon_string(polygon_string, srs='EPSG:4326'):
+    # """N.B. Top Left and Bottom Right coordinates can be interchanged. 
+    # Whitespace is immaterial."""
+    validate_srs(srs)
+    if srs == 'EPSG:4326':
+        _validate_polygon_string(polygon_string, srs='EPSG:4326', min_x=-7, max_x=2, 
+                                                     min_y=49, max_y=61)
+    elif srs == 'EPSG:27700':
+        _validate_polygon_string(polygon_string, srs='EPSG:27700', min_x=0, max_x=700000, 
+                                                      min_y=0, max_y=1250000)
+
+
+def create_polygon_filter(polygon_string, srs):
+
+    xml = """<ogc:Filter>
+                <ogc:Intersects>
+                    <ogc:PropertyName>SHAPE</ogc:PropertyName>
+                    <gml:Polygon srsName="urn:ogc:def:crs:EPSG::{srs_num}">
+                        <gml:outerBoundaryIs>
+                            <gml:LinearRing>
+                                <gml:coordinates>{poly_string}</gml:coordinates>
+                            </gml:LinearRing>
+                        </gml:outerBoundaryIs>
+                    </gml:Polygon>
+                </ogc:Intersects>
+            </ogc:Filter>""".format(srs_num=srs.split(":")[1], poly_string=polygon_string )
+    
+    # Tidying up whitespace 
+    xml = "".join([line.strip() for line in xml.split('\n')])
+
+    return xml
+
+def validate_request_params(api_service, allow_premium, type_name, srs, output_format,
+                            bbox=False, polygon_string=False):
     validate_type_name(type_name, api_service, allow_premium)
     validate_srs(srs)
-    validate_bbox(bbox, srs)
+    if bbox:
+        validate_bbox(bbox, srs)
+    if polygon_string:
+        validate_polygon_string(polygon_string, srs)
     validate_output_format(output_format)
 
 def validate_api_key(api_key):

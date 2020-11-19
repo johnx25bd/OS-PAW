@@ -2,6 +2,7 @@ import pytest
 from os_paw.api_utils import (API_Service, convert_features_to_geojson,
                               convert_single_feature_to_geojson,
                               get_feature_geometry_type, validate_api_key,
+                              geojson_polygon_to_string,
                               validate_api_service, validate_bbox,
                               validate_output_format, validate_request_params,
                               validate_srs, validate_type_name)
@@ -47,8 +48,6 @@ def test_validate_output_format_fail():
 def test_validate_api_service_success():
     validate_api_service('wfs')
 
-
-
 def test_validate_api_service_fail():
     with pytest.raises(TypeError) as e:
         validate_api_service('abc')
@@ -85,19 +84,100 @@ def test_validate_bbox_fail_wgs():
     assert e.value.args[0] == 'British Latitude values must be between 49 and 61. Format bbox as a comma-separated string of the form "latitude_SW, longitude_SW, latitude_NE, longitude_NE".'
 
 
+def test_geojson_polygon_to_string_success():
+    polygon = { "type": "Feature",
+        "properties": {},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [
+                    -1.160430908203125,
+                    52.97593511739012
+                    ],
+                    [
+                    -1.19476318359375,
+                    52.93622435398741
+                    ],
+                    [
+                    -1.13433837890625,
+                    52.94036259335616
+                    ],
+                    [
+                    -1.160430908203125,
+                    52.97593511739012
+                    ]
+                ]
+            ]
+        }
+    }
+    polygon_string = geojson_polygon_to_string(polygon)
+    assert polygon_string == '52.97593511739012,-1.160430908203125 52.93622435398741,-1.19476318359375 52.94036259335616,-1.13433837890625 52.97593511739012,-1.160430908203125'
+
+
+def test_validate_polygon_string_success():
+    polygon={ "type": "Feature",
+        "properties": {},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [
+                    -1.160430908203125,
+                    52.97593511739012
+                    ],
+                    [
+                    -1.19476318359375,
+                    52.93622435398741
+                    ],
+                    [
+                    -1.13433837890625,
+                    52.94036259335616
+                    ],
+                    [
+                    -1.160430908203125,
+                    52.97593511739012
+                    ]
+                ]
+            ]
+        }
+    }
+
+    polygon_string = geojson_polygon_to_string(polygon)
+
+    validate_request_params('wfs', True, 'WaterNetwork_HydroNode',
+        bbox=False, polygon_string=polygon_string, output_format='GeoJSON')
+
+    
+
+def test_validate_polygon_string_fail():
+    with pytest.raises(AssertionError) as e:
+
+        validate_polygon_string('An invalid string')
+    
+    # TODO: write the error assertion
+    expected_error = "INSERT EXPECTED ERROR HERE"
+    assert expected_error in e.value.args[0]#...?
+
+
+
 def test_validate_request_params_success():
     validate_request_params('wfs', True, 'WaterNetwork_HydroNode', 
-                            '605621,139199,606621,140199', 'EPSG:27700',
-                            'GeoJSON')
+                            bbox='605621,139199,606621,140199', 
+                            srs='EPSG:27700',
+                            output_format='GeoJSON')
 
 
 def test_validate_request_params_fail():
     with pytest.raises(ValueError) as e:
         validate_request_params('wfs', True, 'WaterNetwork_HydroDog', 
-                                '605621,139199,606621,140199', 'EPSG:27700',
-                                'GeoJSON')
+                                bbox='605621,139199,606621,140199', srs='EPSG:27700',
+                                output_format='GeoJSON')
     expected_error = '"WaterNetwork_HydroDog" is not a valid Product.'
     assert expected_error in e.value.args[0].split('Available')[0]
+
+# TODO: write test_validate_request_params_polygon_success
+# TODO: write test_validate_request_params_polygon_success
 
 
 def test_validate_api_key_success():
