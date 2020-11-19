@@ -177,8 +177,7 @@ def test_validate_request_params_fail():
     assert expected_error in e.value.args[0].split('Available')[0]
 
 # TODO: write test_validate_request_params_polygon_success
-# TODO: write test_validate_request_params_polygon_success
-
+# TODO: write test_validate_request_params_polygon_fail
 
 def test_validate_api_key_success():
     validate_api_key('abcdefghijklmnopqrstuvwxyzabcdef')
